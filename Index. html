@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Digital Signature Example</title>
+</head>
+<body>
+    <h1>Digital Signature Example</h1>
+
+    <p>Enter your message:</p>
+    <textarea id="message" rows="4" cols="50">This is a test message.</textarea>
+
+    <br><br>
+
+    <button id="signButton">Sign Message</button>
+
+    <br><br>
+
+    <p>Signature (Base64):</p>
+    <textarea id="signature" rows="4" cols="50" readonly></textarea>
+
+    <br><br>
+
+    <p>Public Key (JWK):</p>
+    <textarea id="publicKey" rows="6" cols="50" readonly></textarea>
+
+    <br><br>
+
+    <p>Verify Message:</p>
+    <button id="verifyButton">Verify Signature</button>
+
+    <br><br>
+
+    <p id="verificationResult"></p>
+
+    <script>
+        async function generateKeyPair() {
+            return await crypto.subtle.generateKey(
+                {
+                    name: "RSASSA-PKCS1-v1_5",
+                    modulusLength: 2048,
+                    publicExponent: new Uint8Array([0x01, 0x00, 0x01]), // Common value: 65537
+                    hash: { name: "SHA-256" },
+                },
+                true, // extractable
+                ["sign", "verify"]
+            );
+        }
+
+        async function signMessage(key, message) {
+            const encodedMessage = new TextEncoder().encode(message);
+            const signature = await crypto.subtle.sign(
+                {
+                    name: "RSASSA-PKCS1-v1_5",
+                },
+                key.privateKey,
+                encodedMessage
+            );
+            return signature;
+        }
+
+        async function verifySignature(key, signature, message) {
+            const encodedMessage = new TextEncoder().encode(message);
+            return await crypto.subtle.verify(
+                {
+                    name: "RSASSA-PKCS1-v1_5",
+                },
+                key.publicKey,
+                signature,
+                encodedMessage
+            );
+        }
+
+        async function exportPublicKey(key) {
+          return await crypto.subtle.exportKey("jwk", key.publicKey);
+        }
+
+        async function importPublicKey(jwk) {
+          return await crypto.subtle.importKey(
+            "jwk",
+            jwk,
+            {
+              name: "RSASSA-PKCS1-v1_5",
+              hash: { name: "SHA-256" },
+            },
+            true,
+            ["verify"]
+          );
+        }
+
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return window.btoa(binary);
+        }
+
+        async function main() {
+            const keyPair = await generateKeyPair();
+
+            document.getElementById("signButton").addEventListener("click", async () => {
+                const message = document.getElementById("message").value;
+                const signatureBuffer = await signMessage(keyPair, message);
+                const signatureBase64 = arrayBufferToBase64(signatureBuffer);
+                document.getElementById("signature").value = signatureBase64;
+                const publicKeyJwk = await exportPublicKey(keyPair);
+                document.getElementById("publicKey").value = JSON.stringify(publicKeyJwk, null, 2);
+            });
+
+            document.getElementById("verifyButton").addEventListener("click", async () => {
+                const message = document.getElementById("message").value;
+                const signatureBase64 = document.getElementById("signature").value;
+                const publicKeyJwkString = document.getElementById("publicKey").value;
+
+                if (!signatureBase64 || !publicKeyJwkString) {
+                    document.getElementById("verificationResult").textContent = "Please sign a message first.";
+                    return;
+                }
+
+                try {
+
+                    const signatureBuffer = Uint8Array.from(atob(signatureBase64), c => c.charCodeAt(0)).buffer;
+                    const publicKeyJwk = JSON.parse(publicKeyJwkString);
+                    const publicKey = await importPublicKey(publicKeyJwk);
+
+                    const isValid = await verifySignature({publicKey: publicKey}, signatureBuffer, message);
+                    document.getElementById("verificationResult").textContent = isValid ? "Signature is valid." : "Signature is invalid.";
+                } catch (error) {
+                    console.error("Verification error:", error);
+                    document.getElementById("verificationResult").textContent = "Verification failed: " + error.message;
+                }
+            });
+        }
+
+        main();
+    </script>
+</body>
+</html>
